@@ -24,13 +24,11 @@
   max-width: 380px;
 }
 
-.welcome-logo {
-  font-family: 'Nunito', sans-serif;
-  font-size: 48px;
-  font-weight: 700;
-  color: #A8B5A0;
-  letter-spacing: 3px;
+.welcome-logo-img {
+  width: 120px;
+  height: auto;
   margin-bottom: 24px;
+  opacity: 0.85;
 }
 
 .welcome-tagline {
