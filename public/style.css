@@ -805,3 +805,8 @@ body.build-mode .pip-panel {
     bottom: 62px;
   }
 }
+
+
+/* === PIP OVERRIDES === */
+.logo { color: #D4A0A0; }
+/* === END PIP OVERRIDES === */
