@@ -16,6 +16,13 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// -- Root redirect to default session --
+app.get('/', (req, res) => {
+  const token = process.env.SESSION_TOKEN;
+  if (token) return res.redirect(`/s/${token}`);
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // -- Session entry point --
 app.get('/s/:token', (req, res) => {
   const { token } = req.params;
