@@ -1,0 +1,19 @@
+{
+  "name": "LFBD",
+  "short_name": "LFBD",
+  "description": "A quiet place to talk. Anytime you need it.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF8F5",
+  "theme_color": "#A8B5A0",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

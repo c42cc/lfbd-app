@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>LFBD — How It Works</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #FAF8F5;
+      --bg-secondary: #F0EDE8;
+      --accent: #A8B5A0;
+      --accent-hover: #95a58d;
+      --text: #4A4A4A;
+      --text-muted: #8A8A8A;
+      --rose: #D4A0A0;
+      --radius: 12px;
+      --font: 'Nunito', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; }
+
+    body {
+      font-family: var(--font);
+      font-size: 16px;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100%;
+    }
+
+    .guide {
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 24px 20px 64px;
+    }
+
+    .guide-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 32px;
+      transition: color 0.2s;
+    }
+
+    .guide-back:hover { color: var(--accent); }
+
+    .guide-title {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .guide-subtitle {
+      font-size: 17px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 40px;
+    }
+
+    .guide h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      margin-top: 40px;
+    }
+
+    .guide h2:first-of-type { margin-top: 0; }
+
+    .guide p {
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+
+    .guide p.muted {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0 24px;
+      flex-wrap: wrap;
+    }
+
+    .button-card {
+      flex: 1;
+      min-width: 140px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .button-card .icon {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 10px;
+      color: var(--text-muted);
+    }
+
+    .button-card .icon.recording { color: var(--rose); }
+    .button-card .icon.accent { color: var(--accent); }
+
+    .button-card .label {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .button-card .desc {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .toggle-demo {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      background: var(--bg-secondary);
+      border-radius: 20px;
+      padding: 3px;
+      align-self: center;
+      width: fit-content;
+      margin: 16px auto 24px;
+    }
+
+    .toggle-demo span {
+      padding: 6px 20px;
+      border-radius: 18px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .toggle-demo span.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .step-list {
+      list-style: none;
+      counter-reset: steps;
+      margin: 16px 0 24px;
+    }
+
+    .step-list li {
+      counter-increment: steps;
+      padding: 12px 0 12px 40px;
+      position: relative;
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+      border-bottom: 1px solid var(--bg-secondary);
+    }
+
+    .step-list li:last-child { border-bottom: none; }
+
+    .step-list li::before {
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      top: 12px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--bg-secondary);
+      margin: 32px 0;
+    }
+
+    .privacy-box {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin: 16px 0;
+    }
+
+    .privacy-box p {
+      margin-bottom: 8px;
+    }
+
+    .privacy-box p:last-child { margin-bottom: 0; }
+
+    @media (max-width: 480px) {
+      .guide { padding: 16px 16px 48px; }
+      .guide-title { font-size: 28px; }
+      .button-row { flex-direction: column; }
+      .button-card { min-width: unset; }
+    }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-secondary); border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="guide">
+    <a class="guide-back" href="javascript:history.back()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </a>
+
+    <div class="guide-title">How It Works</div>
+    <p class="guide-subtitle">This is your private voice companion. You talk, it listens and responds. Your conversations are saved between sessions so it remembers what you've shared.</p>
+
+    <h2>Starting a Conversation</h2>
+    <p>Tap the microphone button at the bottom of the screen. Your browser will ask for mic permission the first time — say yes. Once connected, just start talking. You'll see a status indicator ("Listening...", "AI speaking...") so you always know what's happening.</p>
+    <p>When you're done, tap the mic button again. Your conversation saves automatically.</p>
+
+    <h2>The Buttons</h2>
+    <div class="button-row">
+      <div class="button-card">
+        <div class="icon recording">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+        <div class="label">Mic</div>
+        <div class="desc">Tap to start talking. Tap again to stop and save.</div>
+      </div>
+      <div class="button-card">
+        <div class="icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <div class="label">History</div>
+        <div class="desc">See past conversations. Tap one to re-read it. Check the box to give the AI that context next time.</div>
+      </div>
+      <div class="button-card">
+        <div class="icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="label">Type</div>
+        <div class="desc">Opens a text box. If you'd rather type something mid-conversation instead of saying it, use this.</div>
+      </div>
+    </div>
+
+    <h2>Choosing a Voice</h2>
+    <p>At the bottom of the screen, you'll see a toggle to switch between two AI voices:</p>
+    <div class="toggle-demo">
+      <span class="active">Gemini</span>
+      <span>Grok</span>
+    </div>
+    <p>Both work the same way — pick whichever one you prefer. If you switch while a conversation is active, it'll end the current session first.</p>
+
+    <hr class="divider">
+
+    <h2>Giving It Context</h2>
+    <p>The AI doesn't automatically remember past sessions. But you can give it that memory.</p>
+    <ol class="step-list">
+      <li>Tap the <strong>History</strong> button to open your past conversations</li>
+      <li>Check the box next to any conversations you want the AI to remember</li>
+      <li>Start a new conversation — the AI will have that context and can reference what was discussed</li>
+    </ol>
+    <p class="muted">There's a limit to how much context fits, so if you select many long conversations, earlier parts may be trimmed.</p>
+
+    <hr class="divider">
+
+    <h2>Settings</h2>
+    <p>Tap the gear icon in the top-right corner. You'll see two fields:</p>
+    <p><strong>System Prompt</strong> — This shapes how the AI behaves. The default is a compassionate listener who keeps responses short and warm. You can change it to anything you want.</p>
+    <p><strong>Message Prompt</strong> — Extra info that gets included in every session. Things like your name, what you're working through, or anything you don't want to have to repeat each time.</p>
+    <p>Hit <strong>Save</strong> when you're done. Changes apply to the next conversation you start.</p>
+
+    <hr class="divider">
+
+    <h2>Your Privacy</h2>
+    <div class="privacy-box">
+      <p>Your voice is <strong>never recorded or stored</strong>. Only the text of what was said is saved.</p>
+      <p>Conversations are stored privately on the server and are only accessible through your personal link. No one else can see them.</p>
+      <p>You can delete any conversation from the History panel by tapping the <strong>&times;</strong> next to it.</p>
+    </div>
+
+    <hr class="divider">
+
+    <h2>Tips</h2>
+    <p><strong>Add it to your home screen.</strong> On iPhone, open this link in Safari, tap Share, then "Add to Home Screen." It'll open like a regular app — no browser bar, no tabs.</p>
+    <p><strong>It's okay to sit in silence.</strong> The AI won't rush to fill pauses. Take your time.</p>
+    <p><strong>You can stop anytime.</strong> Tap the mic to end. Everything saves.</p>
+  </div>
+</body>
+</html>

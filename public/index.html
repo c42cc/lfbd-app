@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="LFBD">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <title>LFBD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+</head>
+<body>
+  <!-- Welcome overlay (first visit only) -->
+  <div id="welcome-overlay">
+    <div class="welcome-card">
+      <div class="welcome-logo">LFBD</div>
+      <p class="welcome-tagline">A quiet place to talk.<br>Anytime you need it.</p>
+      <p class="welcome-desc">Voice companion — tap the mic, talk, and it listens. Your conversations are saved between sessions.</p>
+      <button id="btn-welcome-start" class="welcome-btn">Get Started</button>
+      <a href="/guide.html" class="welcome-link">See how it works</a>
+    </div>
+  </div>
+
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <span class="logo">LFBD</span>
+      <div class="header-actions">
+        <a href="/guide.html" class="icon-btn" title="How it works" aria-label="How it works">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </a>
+        <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      </div>
+    </header>
+
+    <!-- Transcript area -->
+    <main id="transcript-area">
+      <div id="transcript-empty" class="empty-state">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+        <p>Tap the mic to start</p>
+      </div>
+      <div id="transcript-turns"></div>
+    </main>
+
+    <!-- Voice status indicator -->
+    <div id="voice-status" class="hidden">
+      <span class="pulse-dot"></span>
+      <span id="voice-status-text">Connecting...</span>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden"></div>
+
+    <!-- Bottom bar -->
+    <footer id="bottom-bar">
+      <div class="bottom-actions">
+        <button id="btn-new-chat" class="action-btn" title="New Chat">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button id="btn-history" class="action-btn" title="History">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </button>
+        <button id="btn-text" class="action-btn" title="Text Input">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </div>
+
+      <!-- Collapsible text input -->
+      <div id="text-input-panel" class="panel hidden">
+        <div class="text-input-row">
+          <input type="text" id="text-input" placeholder="Type a message..." autocomplete="off">
+          <button id="btn-send-text" class="send-btn">Send</button>
+        </div>
+      </div>
+
+      <!-- Collapsible history panel -->
+      <div id="history-panel" class="panel hidden">
+        <div id="history-list"></div>
+        <div id="history-empty" class="panel-empty">No conversations yet</div>
+      </div>
+
+      <!-- Provider toggle -->
+      <div class="provider-toggle">
+        <button id="btn-provider-gemini" class="provider-btn active" data-provider="gemini">Gemini</button>
+        <button id="btn-provider-grok" class="provider-btn" data-provider="grok">Grok</button>
+      </div>
+    </footer>
+
+    <!-- Settings modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button id="btn-close-settings" class="icon-btn" aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <label for="setting-system-prompt">System Prompt</label>
+        <textarea id="setting-system-prompt" rows="8" placeholder="AI persona and behavior instructions..."></textarea>
+        <label for="setting-message-prompt">Message Prompt</label>
+        <textarea id="setting-message-prompt" rows="4" placeholder="Auto-injected context for each new session..."></textarea>
+        <button id="btn-save-settings" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pip button (lower-right) -->
+  <button id="btn-pip" class="pip-fab" title="Pip" aria-label="Message Pip">p</button>
+
+  <!-- Pip chat panel -->
+  <div id="pip-panel" class="pip-panel hidden">
+    <div class="pip-header">
+      <span class="pip-title">Pip</span>
+      <span class="pip-subtitle">your build helper</span>
+      <button id="btn-pip-close" class="icon-btn" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="pip-messages" class="pip-messages"></div>
+    <div class="pip-input-row">
+      <input type="text" id="pip-input" placeholder="Message Pip..." autocomplete="off">
+      <button id="btn-pip-send" class="send-btn">Send</button>
+    </div>
+    <div class="pip-actions-row">
+      <button id="btn-build-mode" class="build-mode-toggle">Build Mode</button>
+      <button id="btn-pip-set" class="pip-set-btn hidden">Set</button>
+    </div>
+  </div>
+
+  <script src="/audio.js"></script>
+  <script src="/gemini-provider.js"></script>
+  <script src="/grok-provider.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
