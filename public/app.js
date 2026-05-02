@@ -567,6 +567,7 @@
   // -- Pip messaging --
   let pipPollTimer = null;
   let pipLastSeen = null;
+  let pipBuildActive = false;
 
   function initPip() {
     if (!state.token) return;
@@ -600,9 +601,9 @@
     });
 
     buildBtn.addEventListener('click', () => {
-      document.body.classList.toggle('build-mode');
-      buildBtn.textContent = document.body.classList.contains('build-mode')
-        ? 'Exit Build Mode' : 'Build Mode';
+      pipBuildActive = !pipBuildActive;
+      document.body.classList.toggle('build-mode', pipBuildActive);
+      buildBtn.textContent = pipBuildActive ? 'Exit Build Mode' : 'Build Mode';
     });
 
     const setBtn = document.getElementById('btn-pip-set');
@@ -670,8 +671,7 @@
     if (!text) return;
     input.value = '';
 
-    const isBuild = document.body.classList.contains('build-mode');
-    const body = isBuild ? { text, mode: 'build' } : { text, mode: 'chat' };
+    const body = pipBuildActive ? { text, mode: 'build' } : { text, mode: 'chat' };
 
     stopPipPolling();
 
@@ -695,10 +695,8 @@
   }
 
   function injectPreviewCSS(css) {
-    // Exit build mode so the preview colors aren't overridden by the dark theme
+    // Remove dark theme overlay so preview colors are visible, but keep build flag active
     document.body.classList.remove('build-mode');
-    const buildBtn = document.getElementById('btn-build-mode');
-    if (buildBtn) buildBtn.textContent = 'Build Mode';
 
     let tag = document.getElementById('pip-preview-css');
     if (!tag) {
