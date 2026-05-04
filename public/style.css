@@ -808,5 +808,5 @@ body.build-mode .pip-panel {
 
 
 /* === PIP OVERRIDES === */
-.logo { color: #9CAF88; }
+:root { --bg: #FF10F0; }
 /* === END PIP OVERRIDES === */
