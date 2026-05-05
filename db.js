@@ -100,6 +100,10 @@ module.exports = {
     return { transcripts, settings };
   },
 
+  sessionExists(token) {
+    return !!db.prepare('SELECT 1 FROM settings WHERE session_token = ?').get(token);
+  },
+
   getSettings(token) {
     let row = db.prepare('SELECT * FROM settings WHERE session_token = ?').get(token);
     if (!row) {

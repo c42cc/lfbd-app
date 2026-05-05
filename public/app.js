@@ -13,10 +13,18 @@
     transcripts: []
   };
 
-  // -- Extract token from URL path /s/:token --
+  // -- Extract token from URL path /s/:token, persist to localStorage --
   function getToken() {
     const m = window.location.pathname.match(/\/s\/([a-f0-9-]{36})/i);
-    return m ? m[1] : null;
+    if (m) {
+      localStorage.setItem('lfbd-session-token', m[1]);
+      return m[1];
+    }
+    const stored = localStorage.getItem('lfbd-session-token');
+    if (stored) return stored;
+    const fresh = crypto.randomUUID();
+    localStorage.setItem('lfbd-session-token', fresh);
+    return fresh;
   }
 
   // -- DOM helpers --
@@ -192,7 +200,10 @@
     try {
       const overrides = await api('GET', `/api/theme/${state.token}`);
       applyTheme(overrides);
-    } catch (_) {}
+      if (overrides.pip_css) injectPreviewCSS(overrides.pip_css);
+    } catch (err) {
+      console.warn('Failed to load theme overrides:', err.message || err);
+    }
   }
 
   function applyTheme(overrides) {
@@ -306,12 +317,162 @@
 
   // -- Voice session management --
   let audioManager = null;
+  let voicePaused = false;
+
+  function buildFullSystemPrompt(extraContext) {
+    const systemPrompt = state.settings.system_prompt || '';
+    const messagePrompt = state.settings.message_prompt || '';
+    const historyContext = buildContextFromSelected();
+
+    let full = systemPrompt;
+    if (messagePrompt) full += '\n\n' + messagePrompt;
+    if (historyContext) full += '\n\n' + historyContext;
+    if (extraContext) full += '\n\n' + extraContext;
+    return full;
+  }
+
+  function createProvider(providerName) {
+    if (providerName === 'gemini') {
+      return { voiceProvider: new GeminiProvider(), inputSampleRate: 16000 };
+    }
+    return { voiceProvider: new GrokProvider(), inputSampleRate: 24000 };
+  }
+
+  async function wireAndConnect(voiceProvider, inputSampleRate, token, systemPrompt, opts) {
+    voiceProvider.onStateChange((status) => {
+      if (status === 'fatal') {
+        voiceProvider.disconnect();
+        if (audioManager) {
+          audioManager.stopCapture();
+          audioManager.stopPlayback();
+          audioManager = null;
+        }
+        showFatalError();
+        setVoiceStatus(null);
+        $('#btn-new-chat').classList.remove('recording');
+        return;
+      }
+      const labels = {
+        connecting: 'Connecting...',
+        listening: 'Listening...',
+        speaking: 'AI speaking...',
+        processing: 'Processing...',
+        error: 'Error',
+        disconnected: null
+      };
+      setVoiceStatus(labels[status] || status);
+    });
+
+    voiceProvider.onTranscript(({ role, text }) => {
+      if (!text || !text.trim()) return;
+      if (!state.activeSession) return;
+      addTurn(role, text);
+      state.activeSession.turns.push({
+        role,
+        text,
+        ts: new Date().toISOString()
+      });
+    });
+
+    voiceProvider.onThinking((text) => {
+      if (!text || !text.trim()) return;
+      addThinkingNote(text);
+    });
+
+    voiceProvider.onAudioReceived((base64Pcm) => {
+      if (audioManager) {
+        audioManager.playPcmChunk(base64Pcm, 24000);
+      }
+    });
+
+    audioManager = new AudioManager();
+    audioManager.onSilence(() => {
+      pauseVoiceSession();
+    }, 29000);
+
+    await withRetry(() => voiceProvider.connect(token, systemPrompt, opts));
+
+    await audioManager.startCapture(inputSampleRate, (base64Pcm) => {
+      if (state.activeSession && state.activeSession.voiceProvider) {
+        state.activeSession.voiceProvider.sendAudio(base64Pcm);
+      }
+    });
+  }
+
+  function buildTurnContext(turns) {
+    if (!turns || turns.length === 0) return '';
+    const MAX_RESUME_CHARS = 8000;
+    const lines = turns.map(t => {
+      const role = t.role === 'user' ? 'User' : 'Assistant';
+      return `${role}: ${t.text}`;
+    }).join('\n');
+    const trimmed = lines.length > MAX_RESUME_CHARS
+      ? '[Earlier turns omitted]\n' + lines.slice(-MAX_RESUME_CHARS)
+      : lines;
+    return `[Conversation so far]\n${trimmed}\n[End of conversation so far]\nContinue naturally from where you left off.`;
+  }
+
+  function showContinueButton() {
+    let btn = document.getElementById('btn-voice-continue');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = 'btn-voice-continue';
+      btn.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:9999;display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:9999px;border:none;cursor:pointer;font-size:14px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,0.2);transition:transform 0.15s;';
+      btn.style.background = 'var(--accent, #A8B5A0)';
+      btn.style.color = 'white';
+      btn.innerHTML = '🎙 <span>Continue</span>';
+      btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
+      btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
+      btn.addEventListener('click', resumeVoiceSession);
+      document.body.appendChild(btn);
+    }
+    btn.style.display = 'flex';
+  }
+
+  function hideContinueButton() {
+    const btn = document.getElementById('btn-voice-continue');
+    if (btn) btn.style.display = 'none';
+  }
+
+  function showFatalError() {
+    let banner = document.getElementById('voice-fatal-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'voice-fatal-banner';
+      banner.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(220,38,38,0.95);color:white;padding:12px 24px;border-radius:12px;font-size:14px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,0.3);';
+      const text = document.createElement('span');
+      text.textContent = 'Connection failed after multiple attempts. Please try again later.';
+      const dismiss = document.createElement('button');
+      dismiss.textContent = '✕';
+      dismiss.style.cssText = 'background:none;border:none;color:white;font-size:18px;cursor:pointer;padding:0 4px;';
+      dismiss.addEventListener('click', () => {
+        banner.style.display = 'none';
+        GeminiProvider.resetFailures();
+        GrokProvider.resetFailures();
+        showContinueButton();
+      });
+      banner.appendChild(text);
+      banner.appendChild(dismiss);
+      document.body.appendChild(banner);
+    }
+    banner.style.display = 'flex';
+    hideContinueButton();
+  }
+
+  function hideFatalError() {
+    const banner = document.getElementById('voice-fatal-banner');
+    if (banner) banner.style.display = 'none';
+  }
 
   async function startVoiceSession() {
-    if (state.activeSession) {
+    if (state.activeSession && !voicePaused) {
       await endVoiceSession();
       return;
     }
+
+    voicePaused = false;
+    hideContinueButton();
+    hideFatalError();
 
     try {
       setVoiceStatus('Connecting...');
@@ -319,29 +480,12 @@
       clearTranscript();
       hide($('#transcript-empty'));
 
-      const systemPrompt = state.settings.system_prompt || '';
-      const messagePrompt = state.settings.message_prompt || '';
-      const context = buildContextFromSelected();
+      const fullSystemPrompt = buildFullSystemPrompt();
 
-      let fullSystemPrompt = systemPrompt;
-      if (messagePrompt) fullSystemPrompt += '\n\n' + messagePrompt;
-      if (context) fullSystemPrompt += '\n\n' + context;
-
-      // Get ephemeral token
-      const tokenResp = await api('GET', `/api/token/${state.provider}`);
+      const tokenResp = await api('GET', `/api/token/${state.token}/${state.provider}`);
       if (!tokenResp.token) throw new Error('Failed to get provider token');
 
-      // Create provider
-      let voiceProvider;
-      let inputSampleRate;
-
-      if (state.provider === 'gemini') {
-        voiceProvider = new GeminiProvider();
-        inputSampleRate = 16000;
-      } else {
-        voiceProvider = new GrokProvider();
-        inputSampleRate = 24000;
-      }
+      const { voiceProvider, inputSampleRate } = createProvider(state.provider);
 
       state.activeSession = {
         id: crypto.randomUUID(),
@@ -349,78 +493,14 @@
         startedAt: new Date().toISOString(),
         turns: [],
         voiceProvider,
-        systemPrompt,
-        messagePrompt
+        systemPrompt: state.settings.system_prompt,
+        messagePrompt: state.settings.message_prompt
       };
 
-      // Set up provider callbacks
-      voiceProvider.onStateChange((status) => {
-        const labels = {
-          connecting: 'Connecting...',
-          listening: 'Listening...',
-          speaking: 'AI speaking...',
-          processing: 'Processing...',
-          error: 'Error',
-          disconnected: null
-        };
-        setVoiceStatus(labels[status] || status);
+      await wireAndConnect(voiceProvider, inputSampleRate, tokenResp.token, fullSystemPrompt, {
+        model: tokenResp.model,
+        voice: tokenResp.voice,
       });
-
-      voiceProvider.onTranscript(({ role, text }) => {
-        if (!text || !text.trim()) return;
-        if (!state.activeSession) return;
-        addTurn(role, text);
-        state.activeSession.turns.push({
-          role,
-          text,
-          ts: new Date().toISOString()
-        });
-      });
-
-      voiceProvider.onThinking((text) => {
-        if (!text || !text.trim()) return;
-        addThinkingNote(text);
-      });
-
-      voiceProvider.onAudioReceived((base64Pcm) => {
-        if (audioManager) {
-          audioManager.playPcmChunk(base64Pcm, 24000);
-        }
-      });
-
-      // Start audio capture
-      audioManager = new AudioManager();
-      await audioManager.startCapture(inputSampleRate, (base64Pcm) => {
-        if (state.activeSession && state.activeSession.voiceProvider) {
-          state.activeSession.voiceProvider.sendAudio(base64Pcm);
-        }
-      });
-
-      // Connect to provider
-      await voiceProvider.connect(tokenResp.token, fullSystemPrompt);
-
-      // Auto-reconnect on unexpected WS close
-      voiceProvider._origOnClose = voiceProvider.ws?.onclose;
-      const origWs = voiceProvider.ws;
-      if (origWs) {
-        const origOnClose = origWs.onclose;
-        origWs.onclose = async (ev) => {
-          if (origOnClose) origOnClose.call(origWs, ev);
-          if (state.activeSession && state.activeSession.voiceProvider === voiceProvider && !ev.wasClean) {
-            showToast('Connection lost. Reconnecting...', 5000);
-            try {
-              await withRetry(async () => {
-                const newToken = await api('GET', `/api/token/${state.activeSession.provider}`);
-                await voiceProvider.connect(newToken.token, fullSystemPrompt);
-              });
-              showToast('Reconnected');
-            } catch (retryErr) {
-              showToast('Connection lost. Tap mic to retry.');
-              await endVoiceSession();
-            }
-          }
-        };
-      }
 
     } catch (err) {
       console.error('Failed to start voice session:', err);
@@ -429,6 +509,9 @@
         msg = 'Microphone permission denied. Please allow mic access and try again.';
       } else if (err.name === 'NotFoundError') {
         msg = 'No microphone found. Please connect a mic and try again.';
+      } else if (msg.includes('too many failures')) {
+        showFatalError();
+        return;
       }
       showToast(msg, 5000);
       setVoiceStatus(null);
@@ -437,8 +520,76 @@
     }
   }
 
+  function pauseVoiceSession() {
+    if (!state.activeSession) return;
+
+    voicePaused = true;
+
+    if (state.activeSession.voiceProvider) {
+      state.activeSession.voiceProvider.disconnect();
+    }
+    if (audioManager) {
+      audioManager.stopCapture();
+      audioManager.stopPlayback();
+      audioManager = null;
+    }
+
+    setVoiceStatus(null);
+    $('#btn-new-chat').classList.remove('recording');
+    showContinueButton();
+  }
+
+  async function resumeVoiceSession() {
+    if (!state.activeSession) {
+      await startVoiceSession();
+      return;
+    }
+
+    voicePaused = false;
+    hideContinueButton();
+    hideFatalError();
+
+    const savedTurns = state.activeSession.turns.slice();
+    const savedSession = state.activeSession;
+
+    try {
+      setVoiceStatus('Reconnecting...');
+      $('#btn-new-chat').classList.add('recording');
+
+      const turnContext = buildTurnContext(savedTurns);
+      const fullSystemPrompt = buildFullSystemPrompt(turnContext);
+
+      const tokenResp = await api('GET', `/api/token/${state.token}/${savedSession.provider}`);
+      if (!tokenResp.token) throw new Error('Failed to get provider token');
+
+      const { voiceProvider, inputSampleRate } = createProvider(savedSession.provider);
+
+      state.activeSession.voiceProvider = voiceProvider;
+
+      await wireAndConnect(voiceProvider, inputSampleRate, tokenResp.token, fullSystemPrompt, {
+        model: tokenResp.model,
+        voice: tokenResp.voice,
+      });
+
+    } catch (err) {
+      console.error('Failed to resume voice session:', err);
+      if (err.message && err.message.includes('too many failures')) {
+        showFatalError();
+      } else {
+        showToast('Failed to resume: ' + err.message, 5000);
+        showContinueButton();
+      }
+      setVoiceStatus(null);
+      $('#btn-new-chat').classList.remove('recording');
+    }
+  }
+
   async function endVoiceSession() {
     if (!state.activeSession) return;
+
+    voicePaused = false;
+    hideContinueButton();
+    hideFatalError();
 
     const session = state.activeSession;
     state.activeSession = null;
@@ -499,6 +650,27 @@
     });
   }
 
+  // -- Update PWA manifest start_url to include the session token --
+  function patchManifest(token) {
+    const link = document.querySelector('link[rel="manifest"]');
+    if (!link) return;
+    const m = {
+      name: 'LFBD', short_name: 'LFBD',
+      description: 'A quiet place to talk. Anytime you need it.',
+      start_url: '/s/' + token,
+      scope: '/',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#FAF8F5',
+      theme_color: '#A8B5A0',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
+    };
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: 'application/json' }));
+  }
+
   // -- Event wiring --
   function init() {
     state.token = getToken();
@@ -507,6 +679,13 @@
       area.innerHTML = '<div class="empty-state"><p>Invalid session link. Please use the link you were given.</p></div>';
       return;
     }
+
+    // Fix URL bar if opened from PWA home screen or root bookmark
+    if (!window.location.pathname.match(/\/s\//)) {
+      history.replaceState(null, '', '/s/' + state.token);
+    }
+
+    patchManifest(state.token);
 
     // Settings modal
     $('#btn-settings').addEventListener('click', () => show($('#settings-modal')));
@@ -540,8 +719,14 @@
       if (e.key === 'Enter') sendTextMessage();
     });
 
-    // New chat / stop
-    $('#btn-new-chat').addEventListener('click', startVoiceSession);
+    // New chat / stop / resume
+    $('#btn-new-chat').addEventListener('click', () => {
+      if (voicePaused && state.activeSession) {
+        resumeVoiceSession();
+      } else {
+        startVoiceSession();
+      }
+    });
 
     // Provider toggle
     $$('.provider-btn').forEach(btn => {
@@ -634,7 +819,9 @@
         appendPipMessages(msgs);
         pipLastSeen = msgs[msgs.length - 1].created_at;
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn('Pip poll failed:', err.message || err);
+    }
   }
 
   function startPipPolling() {

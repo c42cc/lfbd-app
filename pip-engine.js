@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const db = require('./db');
 
-const GROK_API_KEY = process.env.GROK_API_KEY || process.env.XAI_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROK_API_KEY = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
+const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = 'c42cc/lfbd-app';
@@ -87,10 +87,10 @@ async function callFallbackLLM(system, userPrompt) {
     try { return await callGrok(system, userPrompt); }
     catch (err) {
       console.log('Grok failed:', err.message);
-      if (!GEMINI_API_KEY) throw err;
+      if (!GOOGLE_AI_STUDIO_API_KEY) throw err;
     }
   }
-  if (GEMINI_API_KEY) {
+  if (GOOGLE_AI_STUDIO_API_KEY) {
     return await callGemini(system, userPrompt);
   }
   throw new Error('No LLM API key configured');
@@ -144,7 +144,7 @@ async function callGrok(system, userPrompt) {
 }
 
 async function callGemini(system, userPrompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_AI_STUDIO_API_KEY}`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

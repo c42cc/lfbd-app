@@ -1,6 +1,8 @@
 // AudioManager — mic capture to PCM + PCM playback
 
 class AudioManager {
+  static NOISE_FLOOR_RMS = 400;
+
   constructor() {
     this.captureCtx = null;
     this.captureStream = null;
@@ -9,6 +11,18 @@ class AudioManager {
     this.playbackQueue = [];
     this.isPlaying = false;
     this.nextPlayTime = 0;
+
+    this._lastSoundTime = 0;
+    this._silenceThresholdMs = 10000;
+    this._silenceFired = false;
+    this._onSilenceCb = null;
+    this._silenceCheckInterval = null;
+    this._squelchAfterMs = 2000;
+  }
+
+  onSilence(cb, thresholdMs = 10000) {
+    this._onSilenceCb = cb;
+    this._silenceThresholdMs = thresholdMs;
   }
 
   async startCapture(targetSampleRate, onPcmChunk) {
@@ -29,19 +43,50 @@ class AudioManager {
       processorOptions: { targetRate: targetSampleRate }
     });
 
+    this._lastSoundTime = Date.now();
+    this._silenceFired = false;
+
     this.workletNode.port.onmessage = (e) => {
       if (e.data.pcm) {
         const int16 = new Int16Array(e.data.pcm);
-        const base64 = this._int16ToBase64(int16);
-        onPcmChunk(base64);
+
+        let sumSq = 0;
+        for (let i = 0; i < int16.length; i++) {
+          sumSq += int16[i] * int16[i];
+        }
+        const rms = Math.sqrt(sumSq / int16.length);
+
+        if (rms > AudioManager.NOISE_FLOOR_RMS) {
+          this._lastSoundTime = Date.now();
+          this._silenceFired = false;
+        }
+
+        if (Date.now() - this._lastSoundTime < this._squelchAfterMs) {
+          const base64 = this._int16ToBase64(int16);
+          onPcmChunk(base64);
+        }
       }
     };
 
     source.connect(this.workletNode);
-    // Don't connect to destination — we only capture, no local echo
+
+    this._silenceCheckInterval = setInterval(() => {
+      if (
+        this._onSilenceCb &&
+        !this._silenceFired &&
+        Date.now() - this._lastSoundTime >= this._silenceThresholdMs
+      ) {
+        this._silenceFired = true;
+        this._onSilenceCb();
+      }
+    }, 1000);
   }
 
   stopCapture() {
+    if (this._silenceCheckInterval) {
+      clearInterval(this._silenceCheckInterval);
+      this._silenceCheckInterval = null;
+    }
     if (this.workletNode) {
       this.workletNode.disconnect();
       this.workletNode = null;

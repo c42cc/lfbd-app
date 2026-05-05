@@ -1,6 +1,11 @@
 // GrokProvider — browser-side Grok Voice Agent API WebSocket client
 
+let _grokFailureCount = 0;
+let _grokFatalLock = false;
+
 class GrokProvider {
+  static MAX_FAILURES = 3;
+
   constructor() {
     this.ws = null;
     this._onAudio = null;
@@ -10,6 +15,14 @@ class GrokProvider {
     this._connected = false;
     this._currentAudioTranscript = '';
     this._currentThinkingText = '';
+    this._errorFired = false;
+    this._keepaliveTimer = null;
+    this._staleCount = 0;
+  }
+
+  static resetFailures() {
+    _grokFailureCount = 0;
+    _grokFatalLock = false;
   }
 
   onAudioReceived(cb) { this._onAudio = cb; }
@@ -18,6 +31,11 @@ class GrokProvider {
   onStateChange(cb) { this._onState = cb; }
 
   async connect(token, systemPrompt) {
+    if (_grokFatalLock) {
+      this._emitState('fatal');
+      return Promise.reject(new Error('Connection aborted — too many failures. Tap to retry.'));
+    }
+
     this._emitState('connecting');
 
     const model = 'grok-voice-think-fast-1.0';
@@ -26,8 +44,13 @@ class GrokProvider {
     return new Promise((resolve, reject) => {
       this.ws = new WebSocket(url, [`xai-client-secret.${token}`]);
 
+      const connectTimeout = setTimeout(() => {
+        if (this.ws) this.ws.close();
+        reject(new Error('Connection timed out'));
+      }, 10000);
+
       this.ws.onopen = () => {
-        // Send session config
+        clearTimeout(connectTimeout);
         this.ws.send(JSON.stringify({
           type: 'session.update',
           session: {
@@ -41,6 +64,7 @@ class GrokProvider {
         }));
 
         this._connected = true;
+        this._startKeepalive();
         this._emitState('listening');
         resolve();
       };
@@ -55,13 +79,26 @@ class GrokProvider {
       };
 
       this.ws.onerror = (err) => {
+        clearTimeout(connectTimeout);
         console.error('Grok WS error:', err);
-        this._emitState('error');
+        this._errorFired = true;
         reject(new Error('WebSocket connection failed'));
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (ev) => {
+        this._stopKeepalive();
         this._connected = false;
+        const wasError = this._errorFired || !ev.wasClean;
+        this._errorFired = false;
+        if (wasError) {
+          _grokFailureCount++;
+          if (_grokFailureCount >= GrokProvider.MAX_FAILURES) {
+            _grokFatalLock = true;
+            this._emitState('fatal');
+            return;
+          }
+          this._emitState('error');
+        }
         this._emitState('disconnected');
       };
     });
@@ -133,6 +170,12 @@ class GrokProvider {
 
       case 'error':
         console.error('Grok error event:', msg.error);
+        _grokFailureCount++;
+        if (_grokFailureCount >= GrokProvider.MAX_FAILURES) {
+          _grokFatalLock = true;
+          this._emitState('fatal');
+          break;
+        }
         this._emitState('error');
         break;
     }
@@ -167,10 +210,35 @@ class GrokProvider {
   }
 
   disconnect() {
+    this._stopKeepalive();
     this._connected = false;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
+    }
+  }
+
+  _startKeepalive() {
+    this._stopKeepalive();
+    this._staleCount = 0;
+    this._keepaliveTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      if (this.ws.bufferedAmount > 0) {
+        this._staleCount++;
+        if (this._staleCount >= 2) {
+          console.warn('Grok keepalive: send buffer stalled, closing');
+          this.ws.close();
+        }
+      } else {
+        this._staleCount = 0;
+      }
+    }, 30000);
+  }
+
+  _stopKeepalive() {
+    if (this._keepaliveTimer) {
+      clearInterval(this._keepaliveTimer);
+      this._keepaliveTimer = null;
     }
   }
 

@@ -15,10 +15,11 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// -- Root redirect to default session (before static so it catches /) --
+// -- Root: landing page only, never expose the session token --
 app.get('/', (req, res) => {
-  const token = process.env.SESSION_TOKEN;
-  if (token) return res.redirect(`/s/${token}`);
+  if (process.env.SESSION_TOKEN) {
+    return res.redirect(302, '/s/' + process.env.SESSION_TOKEN);
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -195,8 +196,19 @@ app.post('/api/admin/pip/:token', adminAuth, (req, res) => {
   res.json(msg);
 });
 
-// -- Ephemeral token endpoints --
-app.get('/api/token/gemini', async (req, res) => {
+// -- Session-gated ephemeral token endpoints --
+function requireSession(req, res, next) {
+  const { token } = req.params;
+  if (!token || !/^[a-f0-9-]{36}$/i.test(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!db.sessionExists(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+app.get('/api/token/:token/gemini', requireSession, async (req, res) => {
   try {
     res.json(await gemini.getEphemeralToken());
   } catch (err) {
@@ -204,7 +216,7 @@ app.get('/api/token/gemini', async (req, res) => {
   }
 });
 
-app.get('/api/token/grok', async (req, res) => {
+app.get('/api/token/:token/grok', requireSession, async (req, res) => {
   try {
     res.json(await grok.getEphemeralToken());
   } catch (err) {
