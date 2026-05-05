@@ -21,7 +21,7 @@ async function getEphemeralToken() {
 
   const data = await resp.json();
   return {
-    token: data.client_secret?.value || data.token,
+    token: data.client_secret?.value || data.value || data.token,
     mode: 'ephemeral'
   };
 }
