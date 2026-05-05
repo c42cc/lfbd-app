@@ -63,7 +63,9 @@ class GeminiProvider {
             },
             systemInstruction: {
               parts: [{ text: systemPrompt || '' }]
-            }
+            },
+            inputAudioTranscription: {},
+            outputAudioTranscription: {}
           }
         };
         this.ws.send(JSON.stringify(setup));
@@ -133,18 +135,17 @@ class GeminiProvider {
         this._emitState('listening');
       }
 
-      // AI speech transcript (what the model actually said aloud)
-      if (sc.outputTranscript) {
-        if (this._onTranscript) {
-          this._onTranscript({ role: 'assistant', text: sc.outputTranscript });
-        }
-      }
+    }
 
-      // User speech transcript (what Gemini heard the user say)
-      if (sc.inputTranscript) {
-        if (this._onTranscript) {
-          this._onTranscript({ role: 'user', text: sc.inputTranscript });
-        }
+    if (msg.outputTranscription && msg.outputTranscription.text) {
+      if (this._onTranscript) {
+        this._onTranscript({ role: 'assistant', text: msg.outputTranscription.text });
+      }
+    }
+
+    if (msg.inputTranscription && msg.inputTranscription.text) {
+      if (this._onTranscript) {
+        this._onTranscript({ role: 'user', text: msg.inputTranscription.text });
       }
     }
 
