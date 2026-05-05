@@ -360,7 +360,7 @@
         error: 'Error',
         disconnected: null
       };
-      setVoiceStatus(labels[status] || status);
+      setVoiceStatus(status in labels ? labels[status] : status);
     });
 
     voiceProvider.onTranscript(({ role, text }) => {
