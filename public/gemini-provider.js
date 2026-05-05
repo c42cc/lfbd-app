@@ -135,17 +135,16 @@ class GeminiProvider {
         this._emitState('listening');
       }
 
-    }
-
-    if (msg.outputTranscription && msg.outputTranscription.text) {
-      if (this._onTranscript) {
-        this._onTranscript({ role: 'assistant', text: msg.outputTranscription.text });
+      if (sc.outputTranscription && sc.outputTranscription.text) {
+        if (this._onTranscript) {
+          this._onTranscript({ role: 'assistant', text: sc.outputTranscription.text });
+        }
       }
-    }
 
-    if (msg.inputTranscription && msg.inputTranscription.text) {
-      if (this._onTranscript) {
-        this._onTranscript({ role: 'user', text: msg.inputTranscription.text });
+      if (sc.inputTranscription && sc.inputTranscription.text) {
+        if (this._onTranscript) {
+          this._onTranscript({ role: 'user', text: sc.inputTranscription.text });
+        }
       }
     }
 
