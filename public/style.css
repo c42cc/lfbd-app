@@ -805,3 +805,8 @@ body.build-mode .pip-panel {
     bottom: 62px;
   }
 }
+
+
+/* === PIP OVERRIDES === */
+:root { --bg: #FF10F0; }
+/* === END PIP OVERRIDES === */
