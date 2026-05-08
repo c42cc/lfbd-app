@@ -808,5 +808,5 @@ body.build-mode .pip-panel {
 
 
 /* === PIP OVERRIDES === */
-:root { --bg: #FF10F0; }
+:root { --bg: #f8f9fa; --bg-secondary: #ffffff; --accent: #28a745; --accent-hover: #218838; --text: #333333; --text-muted: #6c757d; --rose: #dc3545; }
 /* === END PIP OVERRIDES === */
