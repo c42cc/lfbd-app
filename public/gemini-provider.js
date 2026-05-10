@@ -16,6 +16,8 @@ class GeminiProvider {
     this._errorFired = false;
     this._keepaliveTimer = null;
     this._staleCount = 0;
+    this._setupResolve = null;
+    this._setupReject = null;
   }
 
   static resetFailures() {
@@ -38,12 +40,16 @@ class GeminiProvider {
 
     const model = (opts && opts.model) || 'gemini-2.5-flash-native-audio-preview';
     const voiceName = (opts && opts.voice) || 'Aoede';
-    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${token}`;
+    const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${token}`;
 
     return new Promise((resolve, reject) => {
+      this._setupResolve = resolve;
+      this._setupReject = reject;
       this.ws = new WebSocket(url);
 
       const connectTimeout = setTimeout(() => {
+        this._setupResolve = null;
+        this._setupReject = null;
         if (this.ws) this.ws.close();
         reject(new Error('Connection timed out'));
       }, 10000);
@@ -69,10 +75,6 @@ class GeminiProvider {
           }
         };
         this.ws.send(JSON.stringify(setup));
-        this._connected = true;
-        this._startKeepalive();
-        this._emitState('listening');
-        resolve();
       };
 
       this.ws.onmessage = async (event) => {
@@ -94,6 +96,8 @@ class GeminiProvider {
         clearTimeout(connectTimeout);
         console.error('Gemini WS error:', err);
         this._errorFired = true;
+        this._setupResolve = null;
+        this._setupReject = null;
         reject(new Error('WebSocket connection failed'));
       };
 
@@ -102,6 +106,13 @@ class GeminiProvider {
         this._connected = false;
         const wasError = this._errorFired || !ev.wasClean;
         this._errorFired = false;
+
+        if (this._setupReject) {
+          this._setupReject(new Error(ev.reason || 'Connection closed before setup completed'));
+          this._setupResolve = null;
+          this._setupReject = null;
+        }
+
         if (wasError) {
           _geminiFailureCount++;
           if (_geminiFailureCount >= GeminiProvider.MAX_FAILURES) {
@@ -117,10 +128,42 @@ class GeminiProvider {
   }
 
   _handleMessage(msg) {
+    if (msg.error) {
+      const errMsg = msg.error.message || JSON.stringify(msg.error);
+      console.error('Gemini API error:', errMsg);
+      if (this._setupResolve) {
+        this._setupResolve = null;
+        if (this._setupReject) {
+          this._setupReject(new Error(errMsg));
+          this._setupReject = null;
+        }
+        return;
+      }
+      _geminiFailureCount++;
+      if (_geminiFailureCount >= GeminiProvider.MAX_FAILURES) {
+        _geminiFatalLock = true;
+        this._emitState('fatal');
+        return;
+      }
+      this._emitState('error');
+      return;
+    }
+
+    if (msg.setupComplete) {
+      this._connected = true;
+      this._startKeepalive();
+      this._emitState('listening');
+      if (this._setupResolve) {
+        this._setupResolve();
+        this._setupResolve = null;
+        this._setupReject = null;
+      }
+      return;
+    }
+
     if (msg.serverContent) {
       const sc = msg.serverContent;
 
-      // Model audio chunks
       if (sc.modelTurn && sc.modelTurn.parts) {
         for (const part of sc.modelTurn.parts) {
           if (part.inlineData && part.inlineData.data) {
@@ -130,7 +173,6 @@ class GeminiProvider {
         }
       }
 
-      // Turn complete
       if (sc.turnComplete) {
         this._emitState('listening');
       }
@@ -146,10 +188,6 @@ class GeminiProvider {
           this._onTranscript({ role: 'user', text: sc.inputTranscription.text });
         }
       }
-    }
-
-    if (msg.setupComplete) {
-      this._emitState('listening');
     }
   }
 

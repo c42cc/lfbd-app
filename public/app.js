@@ -200,7 +200,15 @@
     try {
       const overrides = await api('GET', `/api/theme/${state.token}`);
       applyTheme(overrides);
-      if (overrides.pip_css) injectPreviewCSS(overrides.pip_css);
+      if (overrides.pip_css) {
+        let tag = document.getElementById('pip-theme-css');
+        if (!tag) {
+          tag = document.createElement('style');
+          tag.id = 'pip-theme-css';
+          document.head.appendChild(tag);
+        }
+        tag.textContent = overrides.pip_css;
+      }
     } catch (err) {
       console.warn('Failed to load theme overrides:', err.message || err);
     }
@@ -465,9 +473,9 @@
   }
 
   async function startVoiceSession() {
+    const wasActive = !!state.activeSession && !voicePaused;
     if (state.activeSession && !voicePaused) {
       await endVoiceSession();
-      return;
     }
 
     voicePaused = false;
@@ -480,7 +488,9 @@
       clearTranscript();
       hide($('#transcript-empty'));
 
+      await loadSettings();
       const fullSystemPrompt = buildFullSystemPrompt();
+      if (wasActive) showToast('Session restarted with current prompt');
 
       const tokenResp = await api('GET', `/api/token/${state.token}/${state.provider}`);
       if (!tokenResp.token) throw new Error('Failed to get provider token');
@@ -749,176 +759,6 @@
     loadTheme();
   }
 
-  // -- Pip messaging --
-  let pipPollTimer = null;
-  let pipLastSeen = null;
-  let pipBuildActive = false;
-
-  function initPip() {
-    if (!state.token) return;
-
-    const fab = document.getElementById('btn-pip');
-    const panel = document.getElementById('pip-panel');
-    const closeBtn = document.getElementById('btn-pip-close');
-    const sendBtn = document.getElementById('btn-pip-send');
-    const input = document.getElementById('pip-input');
-    const buildBtn = document.getElementById('btn-build-mode');
-
-    fab.addEventListener('click', () => {
-      panel.classList.toggle('hidden');
-      if (!panel.classList.contains('hidden')) {
-        loadPipMessages();
-        startPipPolling();
-        input.focus();
-      } else {
-        stopPipPolling();
-      }
-    });
-
-    closeBtn.addEventListener('click', () => {
-      panel.classList.add('hidden');
-      stopPipPolling();
-    });
-
-    sendBtn.addEventListener('click', sendPipMessage);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') sendPipMessage();
-    });
-
-    buildBtn.addEventListener('click', () => {
-      pipBuildActive = !pipBuildActive;
-      document.body.classList.toggle('build-mode', pipBuildActive);
-      buildBtn.textContent = pipBuildActive ? 'Exit Build Mode' : 'Build Mode';
-    });
-
-    const setBtn = document.getElementById('btn-pip-set');
-    if (setBtn) {
-      setBtn.addEventListener('click', commitPipChanges);
-    }
-  }
-
-  async function loadPipMessages() {
-    try {
-      const msgs = await api('GET', `/api/pip/${state.token}`);
-      renderPipMessages(msgs);
-      if (msgs.length > 0) {
-        pipLastSeen = msgs[msgs.length - 1].created_at;
-      }
-    } catch (err) {
-      console.error('Failed to load pip messages:', err);
-    }
-  }
-
-  async function pollPipMessages() {
-    try {
-      const url = pipLastSeen
-        ? `/api/pip/${state.token}?since=${encodeURIComponent(pipLastSeen)}`
-        : `/api/pip/${state.token}`;
-      const msgs = await api('GET', url);
-      if (msgs.length > 0) {
-        appendPipMessages(msgs);
-        pipLastSeen = msgs[msgs.length - 1].created_at;
-      }
-    } catch (err) {
-      console.warn('Pip poll failed:', err.message || err);
-    }
-  }
-
-  function startPipPolling() {
-    stopPipPolling();
-    pipPollTimer = setInterval(pollPipMessages, 3000);
-  }
-
-  function stopPipPolling() {
-    if (pipPollTimer) { clearInterval(pipPollTimer); pipPollTimer = null; }
-  }
-
-  function renderPipMessages(msgs) {
-    const container = document.getElementById('pip-messages');
-    container.innerHTML = '';
-    msgs.forEach(m => appendPipMessage(m));
-  }
-
-  function appendPipMessages(msgs) {
-    msgs.forEach(m => appendPipMessage(m));
-  }
-
-  function appendPipMessage(m) {
-    const container = document.getElementById('pip-messages');
-    const div = document.createElement('div');
-    div.className = `pip-msg pip-msg-${m.sender}`;
-    div.textContent = m.text;
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  async function sendPipMessage() {
-    const input = document.getElementById('pip-input');
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = '';
-
-    const body = pipBuildActive ? { text, mode: 'build' } : { text, mode: 'chat' };
-
-    stopPipPolling();
-
-    try {
-      const resp = await api('POST', `/api/pip/${state.token}`, body);
-
-      const msgs = resp.messages || [resp];
-      msgs.forEach(m => appendPipMessage(m));
-      const last = msgs[msgs.length - 1];
-      if (last && last.created_at) pipLastSeen = last.created_at;
-
-      if (resp.preview && resp.preview.css) {
-        injectPreviewCSS(resp.preview.css);
-        showSetButton();
-      }
-    } catch (err) {
-      showToast('Failed to send message');
-    }
-
-    startPipPolling();
-  }
-
-  function injectPreviewCSS(css) {
-    // Remove dark theme overlay so preview colors are visible, but keep build flag active
-    document.body.classList.remove('build-mode');
-
-    let tag = document.getElementById('pip-preview-css');
-    if (!tag) {
-      tag = document.createElement('style');
-      tag.id = 'pip-preview-css';
-      document.head.appendChild(tag);
-    }
-    tag.textContent = css;
-  }
-
-  function showSetButton() {
-    const btn = document.getElementById('btn-pip-set');
-    if (btn) btn.classList.remove('hidden');
-  }
-
-  async function commitPipChanges() {
-    const btn = document.getElementById('btn-pip-set');
-    if (btn) {
-      btn.textContent = 'Deploying...';
-      btn.disabled = true;
-    }
-    try {
-      await api('POST', `/api/pip/${state.token}/set`);
-      appendPipMessage({ sender: 'pip', text: 'Changes are now permanent! The app will redeploy in about a minute.' });
-      if (btn) btn.classList.add('hidden');
-    } catch (err) {
-      showToast('Deploy failed: ' + err.message);
-    } finally {
-      if (btn) {
-        btn.textContent = 'Set';
-        btn.disabled = false;
-      }
-    }
-  }
-
   // -- Welcome overlay --
   function initWelcome() {
     const overlay = document.getElementById('welcome-overlay');
@@ -934,11 +774,18 @@
     });
   }
 
+  function initBuildDate() {
+    fetch('/api/build-date').then(r => r.json()).then(d => {
+      const el = document.getElementById('build-date');
+      if (el && d.date) el.textContent = d.date;
+    }).catch(() => {});
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { initWelcome(); init(); initPip(); });
+    document.addEventListener('DOMContentLoaded', () => { initWelcome(); init(); initBuildDate(); });
   } else {
     initWelcome();
     init();
-    initPip();
+    initBuildDate();
   }
 })();

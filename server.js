@@ -4,16 +4,134 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 const db = require('./db');
 const gemini = require('./providers/gemini');
 const grok = require('./providers/grok');
-const pipEngine = require('./pip-engine');
+const { createPipRouter } = require('./pip-router');
+
+// ---------------------------------------------------------------------------
+// Pip LLM fallback chain (Claude -> Grok -> Gemini)
+// ---------------------------------------------------------------------------
+
+const GROK_API_KEY = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
+const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+async function pipLlmCall(system, userPrompt) {
+  if (ANTHROPIC_API_KEY) {
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          system,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.content?.[0]?.text || '';
+      }
+      console.log('Claude failed:', resp.status);
+    } catch (err) {
+      console.log('Claude failed, falling back:', err.message);
+    }
+  }
+  if (GROK_API_KEY) {
+    try {
+      const resp = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROK_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'grok-3-fast',
+          messages: [{ role: 'system', content: system }, { role: 'user', content: userPrompt }],
+          temperature: 0.3,
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.choices?.[0]?.message?.content || '';
+      }
+      console.log('Grok failed:', resp.status);
+    } catch (err) {
+      console.log('Grok failed:', err.message);
+    }
+  }
+  if (GOOGLE_AI_STUDIO_API_KEY) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_AI_STUDIO_API_KEY}`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: userPrompt }] }],
+        generationConfig: { temperature: 0.3 },
+      }),
+    });
+    if (!resp.ok) throw new Error(`Gemini API ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  }
+  throw new Error('No LLM API key configured');
+}
+
+// ---------------------------------------------------------------------------
+// Pip commit hook (GitHub push + deploy)
+// ---------------------------------------------------------------------------
+
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const GITHUB_REPO = 'c42cc/lfbd-app';
+const FLY_APP = process.env.FLY_APP || 'lfbd-app';
+
+async function pipOnCommit(css, newFileContent) {
+  let pushed = false;
+  let deployed = false;
+
+  if (GITHUB_TOKEN) {
+    const ghUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/public/style.css`;
+    const existing = await fetch(ghUrl, { headers: { 'Authorization': `token ${GITHUB_TOKEN}` } });
+    let sha;
+    if (existing.ok) sha = (await existing.json()).sha;
+
+    const body = { message: 'Pip: apply CSS overrides', content: Buffer.from(newFileContent).toString('base64'), branch: 'main' };
+    if (sha) body.sha = sha;
+
+    const resp = await fetch(ghUrl, {
+      method: 'PUT',
+      headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(`GitHub push failed: ${resp.status}`);
+    pushed = true;
+  }
+
+  try {
+    const { execSync } = require('child_process');
+    execSync(`flyctl deploy -a ${FLY_APP} --remote-only`, { stdio: 'pipe', timeout: 300000 });
+    deployed = true;
+  } catch (err) {
+    console.error('Fly deploy failed:', err.message);
+  }
+
+  return { pushed, deployed };
+}
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
+const BUILD_DATE = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
 app.use(express.json());
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/build-date', (req, res) => res.json({ date: BUILD_DATE }));
 
 // -- Root: landing page only, never expose the session token --
 app.get('/', (req, res) => {
@@ -132,55 +250,47 @@ app.put('/api/admin/theme/:token', adminAuth, (req, res) => {
   res.json({ ok: true, applied: req.body });
 });
 
-// -- Pip messaging (user-facing) --
-app.get('/api/pip/:token', (req, res) => {
+// -- Pip AI assistant (modular router) --
+app.use(createPipRouter({
+  projectRoot: __dirname,
+  cssFile: path.join(__dirname, 'public', 'style.css'),
+  llmCall: pipLlmCall,
+  onCommit: pipOnCommit,
+  masonPrompt: `You are Pip, a friendly UI engineer for LFBD, a voice companion web app.
+The user will ask you to change colors, text, layout, or other visual aspects of the app.
+
+You MUST respond with valid JSON only. No markdown, no explanation outside the JSON.
+
+The app uses CSS custom properties on :root:
+  --bg (background, default #FAF8F5)
+  --bg-secondary (panels, default #F0EDE8)
+  --accent (buttons/links, default #A8B5A0)
+  --accent-hover (hover state, default #95a58d)
+  --text (main text, default #4A4A4A)
+  --text-muted (secondary text, default #8A8A8A)
+  --rose (recording indicator, default #D4A0A0)
+
+Response format:
+{"css": ":root { --accent: #FF0000; }", "reply": "Done! I changed the accent color to red."}
+
+If the request is just conversation (not a change request), return:
+{"css": "", "reply": "your conversational response"}`,
+  scribePrompt: `You are Pip, a warm and friendly companion for the LFBD app.
+You help the user with questions, offer guidance, and have casual conversations.
+Keep responses short, warm, and supportive. You're like a helpful friend, not a therapist.`,
+}));
+
+// -- Pip messaging (engineer channel, DB-backed) --
+app.get('/api/pip/messages/:token', (req, res) => {
   const since = req.query.since || null;
   res.json(db.getPipMessages(req.params.token, since));
 });
 
-app.post('/api/pip/:token', async (req, res) => {
-  const { text, mode } = req.body;
+app.post('/api/pip/messages/:token', (req, res) => {
+  const { text } = req.body;
   if (!text || !text.trim()) return res.status(400).json({ error: 'Empty message' });
-
-  const userMsg = db.sendPipMessage(req.params.token, 'user', text.trim());
-
-  if (mode === 'build') {
-    try {
-      const action = await pipEngine.processBuildRequest(req.params.token, text.trim());
-      pipEngine.applyPreview(req.params.token, action);
-      const pipReply = db.sendPipMessage(req.params.token, 'pip', action.reply);
-      return res.json({ messages: [userMsg, pipReply], preview: { css: action.css } });
-    } catch (err) {
-      console.error('Pip build error:', err);
-      const errReply = db.sendPipMessage(req.params.token, 'pip', `Sorry, I hit an error: ${err.message}`);
-      return res.json({ messages: [userMsg, errReply], preview: null });
-    }
-  }
-
-  if (mode === 'chat') {
-    try {
-      const reply = await pipEngine.processChatRequest(req.params.token, text.trim());
-      const pipReply = db.sendPipMessage(req.params.token, 'pip', reply);
-      return res.json({ messages: [userMsg, pipReply] });
-    } catch (err) {
-      console.error('Pip chat error:', err);
-      const errReply = db.sendPipMessage(req.params.token, 'pip', `Sorry, something went wrong.`);
-      return res.json({ messages: [userMsg, errReply] });
-    }
-  }
-
-  res.json({ messages: [userMsg] });
-});
-
-app.post('/api/pip/:token/set', async (req, res) => {
-  try {
-    await pipEngine.commitChanges(req.params.token);
-    db.sendPipMessage(req.params.token, 'pip', 'Changes are now permanent! The app will redeploy in about a minute.');
-    res.json({ ok: true, status: 'deploying' });
-  } catch (err) {
-    console.error('Pip commit error:', err);
-    res.status(500).json({ error: err.message });
-  }
+  const msg = db.sendPipMessage(req.params.token, 'user', text.trim());
+  res.json(msg);
 });
 
 // -- Pip messaging (engineer via admin) --

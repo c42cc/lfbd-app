@@ -115,32 +115,13 @@
     </div>
   </div>
 
-  <!-- Pip button (lower-right) -->
-  <button id="btn-pip" class="pip-fab" title="Pip" aria-label="Message Pip">p</button>
-
-  <!-- Pip chat panel -->
-  <div id="pip-panel" class="pip-panel hidden">
-    <div class="pip-header">
-      <span class="pip-title">Pip</span>
-      <span class="pip-subtitle">your build helper</span>
-      <button id="btn-pip-close" class="icon-btn" aria-label="Close">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div id="pip-messages" class="pip-messages"></div>
-    <div class="pip-input-row">
-      <input type="text" id="pip-input" placeholder="Message Pip..." autocomplete="off">
-      <button id="btn-pip-send" class="send-btn">Send</button>
-    </div>
-    <div class="pip-actions-row">
-      <button id="btn-build-mode" class="build-mode-toggle">Build Mode</button>
-      <button id="btn-pip-set" class="pip-set-btn hidden">Set</button>
-    </div>
-  </div>
+  <span id="build-date" class="build-date"></span>
 
   <script src="/audio.js"></script>
   <script src="/gemini-provider.js"></script>
   <script src="/grok-provider.js"></script>
   <script src="/app.js"></script>
+  <script src="/pip-ui.js"></script>
+  <script>PipUI.init({ apiBaseUrl: '/api/pip' });</script>
 </body>
 </html>
