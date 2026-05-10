@@ -28,12 +28,14 @@ Open `http://localhost:3000/s/YOUR-SESSION-TOKEN` in a browser.
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes (for Gemini) | Google AI API key |
+| `GOOGLE_AI_STUDIO_API_KEY` | Yes (for Gemini) | Google AI API key |
 | `XAI_API_KEY` or `GROK_API_KEY` | Yes (for Grok) | xAI API key |
 | `SESSION_TOKEN` | Recommended | UUID for the user's session URL. Generate with `uuidgen` |
 | `ADMIN_TOKEN` | Recommended | Bearer token for the admin API. Any strong random string |
 | `PORT` | No | Server port (default: 3000) |
 | `DATA_DIR` | No | SQLite storage directory (default: `./data`) |
+| `GEMINI_LIVE_MODEL` | No | Gemini Live model ID (default: `gemini-2.5-flash-native-audio-preview`) |
+| `GEMINI_LIVE_VOICE` | No | Gemini Live voice name (default: `Aoede`) |
 
 ## Admin API
 
@@ -43,7 +45,7 @@ All admin endpoints require `Authorization: Bearer <ADMIN_TOKEN>` header.
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/health
+  https://lfbd.org/api/admin/health
 ```
 
 Returns: `{ status, uptime, version, db: { transcripts, settings } }`
@@ -52,7 +54,7 @@ Returns: `{ status, uptime, version, db: { transcripts, settings } }`
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/settings/$SESSION_TOKEN
+  https://lfbd.org/api/admin/settings/$SESSION_TOKEN
 ```
 
 ### Update Settings
@@ -62,35 +64,35 @@ curl -X PUT \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"system_prompt": "New prompt text", "message_prompt": ""}' \
-  https://your-app.up.railway.app/api/admin/settings/$SESSION_TOKEN
+  https://lfbd.org/api/admin/settings/$SESSION_TOKEN
 ```
 
 ### List All Transcripts
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/transcripts/$SESSION_TOKEN
+  https://lfbd.org/api/admin/transcripts/$SESSION_TOKEN
 ```
 
 ### Get Single Transcript
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/transcripts/$SESSION_TOKEN/<transcript-id>
+  https://lfbd.org/api/admin/transcripts/$SESSION_TOKEN/<transcript-id>
 ```
 
 ### Delete Single Transcript
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/transcripts/$SESSION_TOKEN/<transcript-id>
+  https://lfbd.org/api/admin/transcripts/$SESSION_TOKEN/<transcript-id>
 ```
 
 ### Delete All Transcripts
 
 ```bash
 curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/transcripts/$SESSION_TOKEN
+  https://lfbd.org/api/admin/transcripts/$SESSION_TOKEN
 ```
 
 ## Pip (In-App Helper)
@@ -104,18 +106,18 @@ Pip is a simple messaging channel between the app user and a helper engineer.
 ```bash
 # Read all messages
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://your-app.up.railway.app/api/admin/pip/$SESSION_TOKEN
+  https://lfbd.org/api/admin/pip/$SESSION_TOKEN
 
 # Read new messages since a timestamp
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "https://your-app.up.railway.app/api/admin/pip/$SESSION_TOKEN?since=2026-05-01T00:00:00Z"
+  "https://lfbd.org/api/admin/pip/$SESSION_TOKEN?since=2026-05-01T00:00:00Z"
 
 # Reply as Pip
 curl -X POST \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"text": "Done! I updated the color."}' \
-  https://your-app.up.railway.app/api/admin/pip/$SESSION_TOKEN
+  https://lfbd.org/api/admin/pip/$SESSION_TOKEN
 ```
 
 The user sees replies from the engineer labeled as "Pip" in the chat panel.
@@ -131,28 +133,26 @@ The engineer opens the LFBD repo in Cursor. The `.cursor/rules/engineer.mdc` fil
 1. **Read** Pip messages for requests
 2. **Plan** the change (2-3 sentences)
 3. **Build** it
-4. **Deploy** by pushing to `main` (Railway auto-deploys)
+4. **Deploy** with `./deploy.sh` (or `flyctl deploy`)
 5. **Reply** via Pip confirming what was done
 
 **Escalation rule:** If a change touches the database schema, voice providers, auth, default prompts, or adds dependencies — send a Pip message saying "You may want to check in with CC" before proceeding.
 
-## Deploy to Railway
+## Deploy to Fly.io
 
-1. Install Railway CLI: `npm i -g @railway/cli`
-2. Login: `railway login`
-3. Init project: `railway init` (from the `_misc/LFBD/` directory)
-4. Add a persistent volume mounted at `/data`
-5. Set environment variables:
+1. Install the Fly CLI: `brew install flyctl`
+2. Login: `flyctl auth login`
+3. Set secrets:
    ```bash
-   railway variables set GEMINI_API_KEY=your-key
-   railway variables set XAI_API_KEY=your-key
-   railway variables set SESSION_TOKEN=$(uuidgen)
-   railway variables set ADMIN_TOKEN=$(openssl rand -hex 24)
-   railway variables set DATA_DIR=/data
+   flyctl secrets set -a lfbd-app \
+     GOOGLE_AI_STUDIO_API_KEY=your-key \
+     XAI_API_KEY=your-key \
+     SESSION_TOKEN=$(uuidgen) \
+     ADMIN_TOKEN=$(openssl rand -hex 24)
    ```
-6. Deploy: `railway up`
-7. Get public URL: `railway domain`
-8. Send the link: `https://<your-domain>/s/<SESSION_TOKEN>`
+4. Deploy: `./deploy.sh` (or `flyctl deploy -a lfbd-app`)
+5. Custom domain `lfbd.org` is configured via Unstoppable Domains DNS
+6. Send the link: `https://lfbd.org/s/<SESSION_TOKEN>`
 
 ## iOS Home Screen Install
 
@@ -167,27 +167,30 @@ The engineer opens the LFBD repo in Cursor. The `.cursor/rules/engineer.mdc` fil
 ```
 server.js              Express server + all routes (app + admin + pip)
 db.js                  SQLite schema + query helpers
+pip-router.js          Modular Pip Express router factory (drop-in AI assistant)
 providers/
   gemini.js            Gemini ephemeral token helper
   grok.js              Grok ephemeral token helper
 public/
-  index.html           Single page + welcome overlay + pip panel
-  app.js               Frontend orchestration + pip messaging + build mode
+  index.html           Single page + welcome overlay
+  app.js               Frontend orchestration (voice sessions, transcripts, settings)
+  pip-ui.js            Self-contained Pip UI component (drop-in, framework-free)
   audio.js             Mic capture + PCM playback
   pcm-processor.js     AudioWorklet for PCM resampling
-  gemini-provider.js   Gemini Live WebSocket client
+  gemini-provider.js   Gemini Live WebSocket client (v1alpha)
   grok-provider.js     Grok Voice WebSocket client
-  style.css            All styles (including build mode dark theme)
+  style.css            All styles
   manifest.json        PWA manifest
   icon.svg             App icon
 .cursor/rules/
   engineer.mdc         Cursor rules for the helper engineer
-Procfile               Railway start command
+fly.toml               Fly.io deployment config
+Dockerfile             Container build for Fly.io
 ```
 
 ## Cost Estimate
 
-- Railway hosting: ~$5/month (Hobby plan)
+- Fly.io hosting: ~$5/month
 - Gemini Live API: ~$0.04/min
 - Grok Voice: ~$0.05/min
 - At 2 sessions/day x 15 min: ~$36-45/month API costs

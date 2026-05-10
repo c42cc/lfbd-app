@@ -9,8 +9,7 @@ messages through the admin API and reply through the same channel.
 1. **Read** the Pip message queue for new requests.
 2. **Plan** the change. Write a 2-3 sentence summary of what you'll do.
 3. **Build** the change. Edit the files, test locally.
-4. **Deploy** by pushing to the `main` branch of the GitHub repo (`c42cc/lfbd`).
-   Railway auto-deploys on push.
+4. **Deploy** with `./deploy.sh` (or `flyctl deploy -a lfbd-app`).
 5. **Reply** via Pip confirming what was done.
 
 ## Escalation Rules

@@ -7,9 +7,7 @@ const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = 'c42cc/lfbd-app';
-const RAILWAY_API_KEY = process.env.RAILWAY_API_KEY;
-const RAILWAY_PROJECT_ID = process.env.RAILWAY_PROJECT_ID;
-const RAILWAY_ENV_ID = process.env.RAILWAY_ENV_ID;
+const FLY_APP = process.env.FLY_APP || 'lfbd-app';
 
 const SYSTEM_PROMPT = `You are Pip, a friendly UI engineer for LFBD, a voice companion web app.
 The user will ask you to change colors, text, layout, or other visual aspects of the app.
@@ -194,9 +192,7 @@ async function commitChanges(token) {
     await pushToGitHub('public/style.css', styleContent, 'Pip: apply CSS overrides');
   }
 
-  if (RAILWAY_API_KEY && RAILWAY_PROJECT_ID && RAILWAY_ENV_ID) {
-    await triggerRailwayDeploy();
-  }
+  await triggerFlyDeploy();
 
   return { ok: true };
 }
@@ -226,17 +222,12 @@ async function pushToGitHub(filePath, content, message) {
   }
 }
 
-async function triggerRailwayDeploy() {
-  const resp = await fetch('https://backboard.railway.app/graphql/v2', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${RAILWAY_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: `mutation { githubRepoDeploy(input: { projectId: "${RAILWAY_PROJECT_ID}", repo: "${GITHUB_REPO}", branch: "main", environmentId: "${RAILWAY_ENV_ID}" }) }`
-    })
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Railway deploy failed: ${resp.status} ${text}`);
+async function triggerFlyDeploy() {
+  const { execSync } = require('child_process');
+  try {
+    execSync(`flyctl deploy -a ${FLY_APP} --remote-only`, { stdio: 'pipe', timeout: 300000 });
+  } catch (err) {
+    throw new Error(`Fly deploy failed: ${err.message}`);
   }
 }
 

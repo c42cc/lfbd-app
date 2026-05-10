@@ -49,38 +49,44 @@ Express HTTP server. Three route groups:
 
 SQLite via better-sqlite3. WAL mode. Two tables, five query functions + three admin helpers.
 
-### providers/gemini.js + grok.js (~40 lines total)
+### providers/gemini.js + grok.js (~50 lines total)
 
-Server-side token helpers. Gemini returns the API key directly (no ephemeral token endpoint yet). Grok calls `POST /v1/realtime/client_secrets` to get an ephemeral token.
+Server-side token helpers. Gemini returns `{ token, mode, model, voice }` — the model and voice are configurable via `GEMINI_LIVE_MODEL` and `GEMINI_LIVE_VOICE` env vars so the browser never hardcodes model IDs. Grok calls `POST /v1/realtime/client_secrets` to get an ephemeral token.
 
-### public/gemini-provider.js + grok-provider.js (~180 lines each)
+### public/gemini-provider.js + grok-provider.js (~200 lines each)
 
 Browser-side WebSocket clients. Identical interface:
 
 ```
-connect(token, systemPrompt)    → opens WS, sends setup
-sendAudio(base64Pcm)            → streams mic audio to provider
-sendText(text)                  → sends text message mid-session
-onAudioReceived(callback)       → AI audio chunks for playback
-onTranscript(callback)          → user/AI speech transcripts
-onThinking(callback)            → Grok reasoning notes (Gemini: no-op)
-onStateChange(callback)         → connecting/listening/speaking/error
-disconnect()                    → closes WS
+connect(token, systemPrompt, opts)  → opens WS, sends setup (opts: {model, voice})
+sendAudio(base64Pcm)                → streams mic audio to provider
+sendText(text)                      → sends text message mid-session
+onAudioReceived(callback)           → AI audio chunks for playback
+onTranscript(callback)              → user/AI speech transcripts
+onThinking(callback)                → Grok reasoning notes (Gemini: no-op)
+onStateChange(callback)             → state: connecting/listening/speaking/error/fatal/disconnected
+disconnect()                        → closes WS
+resetFailures()                     → clears failure counter + fatal lock (for resume)
 ```
 
-### public/audio.js (~110 lines)
+**Failure protection:** Both providers track a failure counter (`MAX_FAILURES = 3`). On WebSocket `onerror` or unclean `onclose`, the counter increments. At 3 failures, the provider enters `"fatal"` state and locks — `connect()` rejects immediately until `resetFailures()` is called by an explicit user action. No automatic reconnection.
 
-`AudioManager` class. Handles mic capture via AudioWorklet + gapless PCM playback.
+### public/audio.js (~155 lines)
+
+`AudioManager` class. Handles mic capture via AudioWorklet + gapless PCM playback + silence detection.
+
 Capture: browser native rate (48kHz) → worklet decimates to target (16kHz Gemini / 24kHz Grok) → base64 → provider.
 Playback: base64 PCM → Int16 → Float32 → scheduled AudioBufferSource nodes for gapless output.
+
+**Silence detection:** Computes RMS energy on each PCM chunk. If RMS stays below `NOISE_FLOOR_RMS` (400) for a configurable threshold (default 10s), fires `onSilence` callback once. Audio transmission is squelched after 2s of silence to avoid burning API quota on empty frames. Timer resets when sound is detected.
 
 ### public/pcm-processor.js (~35 lines)
 
 AudioWorklet processor. Runs in a separate thread. Decimates from 48kHz to the target rate, accumulates 100ms chunks, posts Int16 PCM buffers to the main thread.
 
-### public/app.js (~550 lines)
+### public/app.js (~950 lines)
 
-All frontend logic. State machine, DOM rendering, API calls, voice session lifecycle, history context builder, provider toggle, thinking note renderer.
+All frontend logic. State machine, DOM rendering, API calls, voice session lifecycle (start/pause/resume/end/fatal), history context builder, provider toggle, thinking note renderer, Pip messaging, build mode.
 
 ## Data Model
 
@@ -117,7 +123,11 @@ Mic → getUserMedia (48kHz)
        → decimate to 16kHz (Gemini) or 24kHz (Grok)
        → Int16 PCM chunks (100ms each)
        → postMessage to main thread
-    → base64 encode
+    → RMS energy check (NOISE_FLOOR_RMS = 400)
+       → if sound: reset silence timer, send chunk
+       → if silent > 2s: squelch (skip sending)
+       → if silent > 29s: fire onSilence → pause session
+    → base64 encode (when not squelched)
     → provider.sendAudio(base64)
     → WebSocket to Gemini/Grok
 
@@ -139,16 +149,36 @@ Provider WS response:
 1. User opens `/s/<token>` — server validates UUID format, ensures settings row exists, serves `index.html`
 2. `app.js` extracts token from URL, loads settings + transcript history from REST API
 3. User taps mic → `startVoiceSession()`:
-   a. Fetch ephemeral token from server (`/api/token/gemini` or `/api/token/grok`)
+   a. Fetch ephemeral token + model/voice config from server (`/api/token/gemini` or `/api/token/grok`)
    b. Create provider instance (GeminiProvider or GrokProvider)
-   c. Start AudioManager capture at provider's sample rate
+   c. Start AudioManager capture at provider's sample rate, wire silence callback
    d. Connect provider WS with system prompt + message prompt + selected history context
    e. Wire callbacks: transcript, thinking, audio, state
 4. Conversation runs — audio bidirectional, transcripts accumulate in memory
-5. User taps mic again → `endVoiceSession()`:
+5. **Silence auto-pause:** if no sound detected for 10s, `pauseVoiceSession()`:
+   a. Disconnect provider WS + stop mic capture + stop playback
+   b. Turns and session state preserved in memory
+   c. Show persistent "Continue" button (fixed, lower-left)
+6. User taps Continue → `resumeVoiceSession()`:
+   a. Fetch fresh token from server
+   b. Create new provider instance, wire callbacks
+   c. Build system prompt with accumulated turns as `[Conversation so far]` context
+   d. Reconnect WS — conversation continues from where it left off
+7. User taps mic during active session → `endVoiceSession()`:
    a. Disconnect provider WS
    b. Stop mic capture + playback
    c. POST accumulated turns to `/api/transcripts/:token`
+
+### Fatal State (3-Strike Abort)
+
+If the WebSocket connection fails 3 times (counted per-provider instance), the provider enters `"fatal"` state:
+
+1. Red persistent error banner shown (not auto-dismissed)
+2. Mic and Continue buttons disabled
+3. User must dismiss the error, then tap Continue to retry
+4. `resetFailures()` clears the lock — fresh 3-strike counter
+
+No exponential backoff, no automatic reconnection, no retry loops.
 
 ## Pip Messaging
 

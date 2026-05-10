@@ -624,6 +624,20 @@ body {
   transform: scale(1.1);
 }
 
+.build-date {
+  position: fixed;
+  bottom: 6px;
+  right: 20px;
+  font-size: 9px;
+  color: #000;
+  opacity: 0.35;
+  font-family: var(--font);
+  z-index: 40;
+  pointer-events: none;
+  text-align: center;
+  width: 40px;
+}
+
 /* === Pip Panel === */
 .pip-panel {
   position: fixed;
@@ -805,8 +819,3 @@ body.build-mode .pip-panel {
     bottom: 62px;
   }
 }
-
-
-/* === PIP OVERRIDES === */
-:root { --bg: #f8f9fa; --bg-secondary: #ffffff; --accent: #28a745; --accent-hover: #218838; --text: #333333; --text-muted: #6c757d; --rose: #dc3545; }
-/* === END PIP OVERRIDES === */
